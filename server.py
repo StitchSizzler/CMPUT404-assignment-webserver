@@ -1,5 +1,6 @@
 #  coding: utf-8 
 import socketserver
+import os
 
 # Copyright 2013 Abram Hindle, Eddie Antonio Santos
 # 
@@ -31,8 +32,62 @@ class MyWebServer(socketserver.BaseRequestHandler):
     
     def handle(self):
         self.data = self.request.recv(1024).strip()
-        print ("Got a request of: %s\n" % self.data)
-        self.request.sendall(bytearray("OK",'utf-8'))
+
+        if self.data.decode().split(' ')[0] != 'GET':
+            self.send405NotAllowed()
+            return
+
+        path = self.data.decode().split(' ')[1]
+
+        if path.startswith('/..') or len(path.split('/'))>3:
+            self.send404NotFound()
+            return
+
+        if path[-1] == '/':
+            if os.path.isdir('./www' + path):
+                file = os.open('./www' + path + 'index.html', os.O_RDONLY)
+                body = os.read(file, 1024).decode()
+                self.send200Ok("html", body)
+                return
+            else:
+                self.send404NotFound()
+                return
+
+        else:
+            if os.path.isfile('./www' + path):
+                file = os.open('./www' + path, os.O_RDONLY)
+                body = os.read(file, 1024).decode()
+                if path.split('/')[-1] == 'index.html':
+                    self.send200Ok("html", body)
+                    return
+                else:
+                    self.send200Ok("css", body)
+                    return
+            else:
+                if os.path.isdir('./www' + path + '/'):
+                    self.send301MovedPermanently()
+                    return
+                else:
+                    self.send404NotFound()
+                    return
+
+
+    def send200Ok(self, type="html", content=""):
+        self.request.sendall(bytearray("HTTP/1.1 200 OK\r\nContent-Type:text/" + type + "\n\n" + content, "utf-8"))
+        return
+
+    def send301MovedPermanently(self):
+        self.request.sendall(bytearray("HTTP/1.1 301 Moved Permanently\r\nContent-Type:text/html" + "\r\n", "utf-8"))
+        return
+
+    def send404NotFound(self):
+        self.request.sendall(bytearray("HTTP/1.1 404 Not Found\r\nContent-Type:text/html" + "\r\n", "utf-8"))
+        return
+
+    def send405NotAllowed(self):
+        self.request.sendall(bytearray("HTTP/1.1 405 Not Allowed\r\nContent-Type:text/html" + "\r\n", "utf-8"))
+        return
+
 
 if __name__ == "__main__":
     HOST, PORT = "localhost", 8080
